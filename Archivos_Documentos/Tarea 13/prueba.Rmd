@@ -1,0 +1,31 @@
+---
+title: "Pruebas"
+author: "AndresRojas"
+date: "2023-06-16"
+output: html_document
+---
+## Ejercicio 2.3
+
+| Punto i | Umbral (T) | FP/N  | TP/P  |
+|---------|------------|-------|-------|
+| 1       | 0.1        | 0     | 0.25  |
+| 2       | 0.2        | 0.17  | 0.25  |
+| 3       | 0.3        | 0.33  | 0.25  |
+| 4       | 0.4        | 0.33  | 0.5   |
+| 5       | 0.5        | 0.5   | 0.5   |
+| 6       | 0.6        | 0.5   | 0.75  |
+| 7       | 0.7        | 0.67  | 0.75  |
+| 8       | 0.8        | 0.67  | 1     |
+| 9       | 0.9        | 0.83  | 1     |
+| 10      | 1          | 1     | 1     |
+
+
+```{r}
+
+
+
+```
+
+
+
+#### Tal como es posible observar los mejores metodos pueden ser el bosques(naranja),este como el mejor de todos. Seguido de ADA(magenta), o incluso se podria tomar en consideracion rpart(purple),al seguir una ruta similar a los anteriormente mencionados

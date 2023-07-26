@@ -1,0 +1,857 @@
+---
+title: "Tarea13_JoseRojas"
+author: "AndresRojas"
+date: "2023-06-13"
+output: html_document
+---
+# Funciones,librerias,etc
+
+```{r datos}
+# ========================
+#         Ejercicio 1
+# ========================
+
+# Carga de paquetes
+library(ROCR)
+library(traineR)
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(glue)
+library(scales)
+library(xgboost)
+library(randomForest)
+library(snow)
+library(MASS)
+library(caret)
+
+#FUnciones
+
+calculaAreaROC <- function(prediccion, real) {
+  pred <- ROCR::prediction(prediccion, real)
+  perf <- ROCR::performance(pred, "auc")
+  auc <- as.numeric(perf@y.values)
+  return(auc)
+}
+plotROC <- function(prediccion, real, adicionar = FALSE, color = "red") {
+  pred <- ROCR::prediction(prediccion, real)    
+  perf <- ROCR::performance(pred, "tpr", "fpr")
+  plot(perf, col = color, add = adicionar, main = "Curva ROC")
+  segments(0, 0, 1, 1, col='black')
+  grid()  
+}
+
+precision<-function(clase){
+  function(mc){
+    indices=general.indexes(mc=mc)
+    indices$category.accuracy[clase]
+  }
+}
+
+precision.global<-function(x) sum(diag(x))/sum(x)
+
+error.global <- function(x) 1 - sum(diag(x))/sum(x)
+
+datos <-
+  read.csv(
+    "Tumores.csv",
+    header = TRUE,
+    sep = ',',
+    dec = '.',
+    stringsAsFactors = T
+  )
+datos <- subset(datos, select = -imagen)
+# datos
+datos$tipo <- factor(datos$tipo)
+enteros <- sapply(datos, is.integer)
+datos[enteros] <- lapply(datos[enteros], as.factor)
+
+muestra <- sample(1:nrow(datos), 0.75 * nrow(datos))
+ttesting <- datos[-muestra, ]
+# 25
+nrow(ttesting)
+# 75
+taprendizaje <- datos[muestra, ]
+nrow(taprendizaje)
+
+barplot(prop.table(table(datos$tipo)),
+        col = c("orange", "blue"),
+        main = "Distribucion de la variable por predecir")
+# str(datos)
+# summary(datos)
+# dim(ttesting)
+# dim(taprendizaje)
+
+
+
+
+```
+# Ejercicio 1
+
+```{r Ejercicio 1 }
+# Ejercicio 1: [40 puntos] Esta pregunta tambi´en utilizan nuevamente los datos tumores.csv. El
+# objetivo de este ejercicio es comparar todos los m´etodos predictivos vistos en el curso con esta tabla de datos. Aqu´ı interesa predecir en la variable tipo, para los m´etodos SVM, KNN, ´Arboles,
+# Bosques, Potenciaci´on, eXtreme Gradient Boosting, LDA, Bayes, Redes Neuronales,
+# KNN y Potenciaci´on se desea determinar cu´al m´etodo produce mejores resultados usando la
+# curva ROC. Para esto realice lo siguiente:
+
+
+# nrow(datos)
+tam <- floor(sqrt(nrow(datos))) 
+# tam
+# tam
+# 1. Grafique la curva ROC para todos modelos predictivos generados en la tarea anterior.
+# Use el par´ametro type = ‘‘prob’’ en las funciones predict del paquete traineR para
+# retornar la probabilidad en lugar de la clase. ¿Cu´al m´etodo parece ser mejor?
+
+
+modelo <- train.svm(tipo ~ ., data = taprendizaje)
+prediccion <- predict(modelo, ttesting, type = "prob")
+Score <- prediccion$prediction[, 2]
+Clase <- ttesting$tipo
+plotROC(Score, Clase)
+area_svm <- calculaAreaROC(Score, Clase)
+
+
+modelo <- train.knn(tipo ~ ., data = taprendizaje, kmax = tam)
+prediccion <- predict(modelo, ttesting, type = "prob")
+Score <- prediccion$prediction[, 2]
+Clase <- ttesting$tipo
+area_knn <- calculaAreaROC(Score, Clase)
+plotROC(Score, Clase, adicionar = TRUE, color = "cyan")
+
+modelo <- train.rpart(tipo ~ ., data = taprendizaje)
+prediccion <- predict(modelo, ttesting, type = "prob")
+Score <- prediccion$prediction[, 2]
+Clase <- ttesting$tipo
+area_rpart <- calculaAreaROC(Score, Clase)
+plotROC(Score, Clase, adicionar = TRUE, color = "purple")
+
+
+modelo <- train.randomForest(tipo ~ ., data = taprendizaje)
+prediccion <- predict(modelo, ttesting, type = "prob")
+Score <- prediccion$prediction[, 2]
+Clase <- ttesting$tipo
+area_randomForest <- calculaAreaROC(Score, Clase)
+plotROC(Score, Clase, adicionar = TRUE, color = "orange")
+
+
+modelo <- train.ada(tipo ~ ., data = taprendizaje)
+prediccion <- predict(modelo, ttesting, type = "prob")
+Score <- prediccion$prediction[, 2]
+Clase <- ttesting$tipo
+area_ada <- calculaAreaROC(Score, Clase)
+plotROC(Score, Clase, adicionar = TRUE, color = "green2")
+
+
+modelo <- train.xgboost(
+  tipo ~ .,
+  data = taprendizaje,
+  nrounds = 500,
+  print_every_n = 1000,
+  maximize = F ,
+  eval_metric = "error"
+)
+prediccion <- predict(modelo, ttesting, type = "prob")
+Score <- prediccion$prediction[, 2]
+Clase <- ttesting$tipo
+area_xgboost <- calculaAreaROC(Score, Clase)
+plotROC(Score,
+        Clase,
+        adicionar = TRUE,
+        color = "magenta")
+
+
+modelo <- train.lda(tipo ~ ., data = taprendizaje)
+prediccion <- predict(modelo, ttesting, type = "prob")
+Score <- prediccion$prediction[, 2]
+Clase <- ttesting$tipo
+area_lda <- calculaAreaROC(Score, Clase)
+plotROC(Score,
+        Clase,
+        adicionar = TRUE,
+        color = "lightgray")
+
+
+modelo <- train.bayes(tipo ~ ., data = taprendizaje)
+prediccion <- predict(modelo, ttesting, type = "prob")
+Score <- prediccion$prediction[, 2]
+Clase <- ttesting$tipo
+area_bayes <- calculaAreaROC(Score, Clase)
+plotROC(Score,
+        Clase,
+        adicionar = TRUE,
+        color = "red")
+
+
+modelo <-
+  train.nnet(
+    tipo ~ .,
+    data = taprendizaje,
+    size = 4,
+    maxit = 1000,
+    MaxNWts = 400,
+    trace = FALSE
+  )
+prediccion <- predict(modelo, ttesting, type = "prob")
+Score <- prediccion$prediction[, 2]
+Clase <- ttesting$tipo
+area_nnet <- calculaAreaROC(Score, Clase)
+plotROC(Score, Clase, adicionar = TRUE, color = "blue")
+
+
+legend("bottomright", 
+       legend = c("SVM", "kNN", "rpart", "Random Forest", "AdaBoost", "XGBoost", "LDA", "Bayes", "nnet"),
+       col = c("black", "cyan", "purple", "orange", "green2", "magenta", "lightgray", "red", "blue"),
+       lty = 1, cex = 0.8)
+
+
+
+
+```
+
+
+#### Tal como es posible observar los mejores metodos pueden ser el bosques(naranja),este como el mejor de todos. Seguido de ADA(magenta), o incluso se podria tomar en consideracion rpart(purple),al seguir una ruta similar a los anteriormente mencionados
+
+
+
+```{r 1.2}
+
+
+resultados <- data.frame(Modelo = c("SVM", "KNN", "Bayes", "Rpart","Forest", "ADA",
+                                    "LDA","XGBOOST", "Neural"),
+                         
+                         AREA = c(area_svm, area_knn,area_bayes,area_rpart, area_randomForest,
+                                  area_ada,area_xgboost,area_lda,area_nnet))
+
+prueba <- resultados[which.max(resultados$AREA),]
+prueba
+
+```
+# Ejercico 2
+
+
+####  Tal como es posible observar y como habia sido observado en el grafico de las curvas ROC el mejor metodo es Forest
+
+
+
+## Ejercico 2.1
+
+
+| Punto i | Umbral (T) | Tasa FP | Tasa TP | MC         |
+|---------|------------|---------|---------|------------|
+| 1       | 1          | 0       | 0       | 0 6<br>4 0 |
+| 2       | 0.9        | 0       | 0.25    | 0 6<br>3 1 |
+| 3       | 0.8        | 0.17    | 0.25    | 0 5<br>3 1 |
+| 4       | 0.65       | 0.33    | 0.25    | 0 4<br>3 1 |
+| 5       | 0.6        | 0.33    | 0.5     | 0 4<br>2 2 |
+| 6       | 0.45       | 0.5     | 0.5     | 0 3<br>2 2 |
+| 7       | 0.4        | 0.5     | 0.75    | 0 3<br>1 3 |
+| 8       | 0.15       | 0.67    | 0.75    | 0 2<br>1 3 |
+| 9       | 0.1        | 0.67    | 1       | 0 2<br>0 4 |
+| 10      | 0.05       | 0.83    | 1       | 0 1<br>0 4 |
+| 11      | 0          | 1       | 1       | 0 0<br>0 4 |
+
+
+### Ejercico 2.2
+
+
+```{r Ejercico 2.2}
+# Codigo para replicar la salida a mano
+# Individuo Clase Score
+# 7 P 0.61
+# 8 N 0.06
+# 1 N 0.80
+# 2 P 0.11
+# 3 N 0.66
+# 6 N 0.46
+# 4 P 0.40
+# 10 N 0.19
+# 5 N 0.00
+# 9 P 0.91
+
+# Usando la definici´on de curva ROC calcule y grafique “a mano” la curva ROC, use un
+# umbral T = 0 y un paso de 0,05. Es decir, debe hacerlo variando el umbral y calculando
+# las matrices de confusi´on
+# Si es P=1,N=0
+
+Umbral <- 0
+Paso <- 0.05
+
+
+Clase <- c(1,0,0,1,0,0,1,0,0,1)
+Score <- c(0.61, 0.06,0.80, 0.11, 0.66, 0.46, 0.40, 0.19, 0.00, 0.91)
+
+# Graficamos ROC con funciones de paquete ROCR
+plotROC(Score, Clase)
+# Graficamos puntos con algoritmo
+i <- 1  # Contador
+FP_r <- -1  # Para que entre al condicional en la primera iteracion
+TP_r <- -1  # Para que entre al condicional en la primera iteracion
+
+for(Umbral in seq(1, 0, by = -0.05)) {
+  Prediccion <- ifelse(Score >= Umbral, 1, 0)
+
+  MC <- table(Clase, Pred = factor(Prediccion, levels = c(0, 1)))
+
+  # Condicional para no imprimir puntos repetidos
+  if (FP_r != MC[1, 2] / sum(MC[1,]) |
+      TP_r != MC[2, 2] / sum(MC[2,])) {
+      FP_r <- MC[1, 2] / sum(MC[1,])  # Tasa de Falsos Positivos
+      TP_r <- MC[2, 2] / sum(MC[2,])  # Tasa de Verdaderos Positivos
+
+    # Graficamos punto
+    points(FP_r, TP_r, col = "blue")
+    text(FP_r + 0.02, TP_r - 0.02, Umbral)
+
+    # Imprimimos resultados
+    cat("Punto i = ", i, "\n")
+    cat("Umbral = T = ", Umbral, "\n")
+    cat("Tasa FP = ", round(FP_r, 2), "\n")
+    cat("Tasa TP = ", round(TP_r, 2), "\n")
+    cat("MC = \n")
+    print(MC)
+    cat("\n")
+
+    i <- i + 1  # Aumentamos contador
+
+  }
+
+}
+```
+
+
+## Ejercicio 2.3
+
+| Punto i | Umbral (T) | FP/N  | TP/P  |
+|---------|------------|-------|-------|
+| 1       | 0.1        | 0     | 0.25  |
+| 2       | 0.2        | 0.17  | 0.25  |
+| 3       | 0.3        | 0.33  | 0.25  |
+| 4       | 0.4        | 0.33  | 0.5   |
+| 5       | 0.5        | 0.5   | 0.5   |
+| 6       | 0.6        | 0.5   | 0.75  |
+| 7       | 0.7        | 0.67  | 0.75  |
+| 8       | 0.8        | 0.67  | 1     |
+| 9       | 0.9        | 0.83  | 1     |
+| 10      | 1          | 1     | 1     |
+
+### Ejercico 2.4
+```{r 2.4}
+Clase <- c(1,0,0,1,0,1,0,1,0,0)
+Score <- c(0.91,0.80, 0.66, 0.61, 0.46, 0.40, 0.19, 0.11, 0.06, 0.00)
+
+plotROC(Score, Clase)
+
+Umbral<- 0.1
+Paso <- 0.1
+
+N <- 6 # ceros
+P <- 4 # unos
+
+TP <- 0 
+FP <- 0
+
+for(i in 1:10) { 
+  
+  if(Score[i] > Umbral)
+    if(Clase[i] == 1)
+      TP <- TP + 1
+  else 
+    FP <- FP + 1
+  else 
+    if(Clase[i] == 0)
+      FP <- FP + 1
+    else 
+      TP <- TP + 1
+    
+    # Graficamos punto
+    points(FP / N, TP / P, col = "blue")
+    text(FP / N + 0.02, TP / P - 0.02, i)
+      cat("Punto i = ", i, "\n")  
+      cat("Umbral = T = ", Umbral, "\n")
+      cat("FP/N = ", round(FP / N, 2), "\n")
+      cat("TP/P = ", round(TP / P, 2), "\n") 
+      cat("\n") 
+      
+    Umbral <- Umbral + Paso  
+    
+}
+```
+
+
+## Ejercicio #3
+
+```{r 3}
+datos <- read.csv("SAheart.csv", header = TRUE, sep = ";",dec='.',stringsAsFactors = T)
+# datos
+numericos <- datos[, sapply(datos, is.numeric)]
+numericos
+head(datos)
+
+muestra <- sample(1:nrow(datos),floor(nrow(datos)*0.20))
+ttesting <- datos[muestra,]
+taprendizaje <- datos[-muestra,]
+tam <- floor(sqrt(nrow(datos))) 
+tam
+barplot(prop.table(table(datos$chd)),col=c("orange","blue","green"),main="Distribucion de la variable por predecir")
+
+
+
+```
+
+## Ejercicio 3.1
+
+
+```{r 3.1}
+modelo <- train.svm(chd ~ ., data = taprendizaje)
+prediccion <- predict(modelo, ttesting, type = "prob")
+Score <- prediccion$prediction[, 2]
+Clase <- ttesting$chd
+mejor_corte <- 0
+mejor_precision_global <- 0
+mejor_prediccion_si <- 0
+
+for (Corte in seq(1, 0, by = -0.05)) {
+  Prediccion <- ifelse(Score >= Corte, "Si", "No")
+  MC <- table(Clase, Pred = factor(Prediccion, levels = c("No", "Si")))
+  indices <- general.indexes(mc = MC)
+  
+  precision_global <- indices$overall.accuracy
+  prediccion_si <- indices$category.accuracy[2]
+  
+  if (prediccion_si > mejor_prediccion_si && precision_global >= mejor_precision_global) {
+    mejor_corte <- Corte
+    mejor_precision_global <- precision_global
+    mejor_prediccion_si <- prediccion_si
+  }
+}
+cat("Mejor Probabilidad de Corte para train.svm:\n")
+cat("Corte:", mejor_corte, "\n")
+cat("Precision Global:", mejor_precision_global, "\n")
+cat("Prediccion de la categoria 'Si':", mejor_prediccion_si, "\n")
+cat("========================================\n")
+
+
+modelo <- train.ada(chd ~ ., data = taprendizaje)
+prediccion <- predict(modelo, ttesting, type = "prob")
+Score <- prediccion$prediction[, 2]
+Clase <- ttesting$chd
+mejor_corte <- 0
+mejor_precision_global <- 0
+mejor_prediccion_si <- 0
+
+for (Corte in seq(1, 0, by = -0.05)) {
+  Prediccion <- ifelse(Score >= Corte, "Si", "No")
+  MC <- table(Clase, Pred = factor(Prediccion, levels = c("No", "Si")))
+  indices <- general.indexes(mc = MC)
+  
+  precision_global <- indices$overall.accuracy
+  prediccion_si <- indices$category.accuracy[2]
+  
+  if (prediccion_si > mejor_prediccion_si && precision_global >= mejor_precision_global) {
+    mejor_corte <- Corte
+    mejor_precision_global <- precision_global
+    mejor_prediccion_si <- prediccion_si
+  }
+}
+cat("Mejor Probabilidad de Corte para train.ada:\n")
+cat("Corte:", mejor_corte, "\n")
+cat("Precision Global:", mejor_precision_global, "\n")
+cat("Prediccion de la categoria 'Si':", mejor_prediccion_si, "\n")
+cat("========================================\n")
+
+modelo <- train.knn(chd ~ ., data = taprendizaje, kmax = tam)
+prediccion <- predict(modelo, ttesting, type = "prob")
+Score <- prediccion$prediction[, 2]
+Clase <- ttesting$chd
+mejor_corte <- 0
+mejor_precision_global <- 0
+mejor_prediccion_si <- 0
+
+for (Corte in seq(1, 0, by = -0.05)) {
+  Prediccion <- ifelse(Score >= Corte, "Si", "No")
+  MC <- table(Clase, Pred = factor(Prediccion, levels = c("No", "Si")))
+  indices <- general.indexes(mc = MC)
+  
+  precision_global <- indices$overall.accuracy
+  prediccion_si <- indices$category.accuracy[2]
+  
+  if (prediccion_si > mejor_prediccion_si && precision_global >= mejor_precision_global) {
+    mejor_corte <- Corte
+    mejor_precision_global <- precision_global
+    mejor_prediccion_si <- prediccion_si
+  }
+}
+cat("Mejor Probabilidad de Corte para train.knn:\n")
+cat("Corte:", mejor_corte, "\n")
+cat("Precision Global:", mejor_precision_global, "\n")
+cat("Prediccion de la categoria 'Si':", mejor_prediccion_si, "\n")
+cat("========================================\n")
+
+modelo <- train.rpart(chd ~ ., data = taprendizaje)
+prediccion <- predict(modelo, ttesting, type = "prob")
+Score <- prediccion$prediction[, 2]
+Clase <- ttesting$chd
+mejor_corte <- 0
+mejor_precision_global <- 0
+mejor_prediccion_si <- 0
+
+for (Corte in seq(1, 0, by = -0.05)) {
+  Prediccion <- ifelse(Score >= Corte, "Si", "No")
+  MC <- table(Clase, Pred = factor(Prediccion, levels = c("No", "Si")))
+  indices <- general.indexes(mc = MC)
+  
+  precision_global <- indices$overall.accuracy
+  prediccion_si <- indices$category.accuracy[2]
+  
+  if (prediccion_si > mejor_prediccion_si && precision_global >= mejor_precision_global) {
+    mejor_corte <- Corte
+    mejor_precision_global <- precision_global
+    mejor_prediccion_si <- prediccion_si
+  }
+}
+cat("Mejor Probabilidad de Corte para train.rpart:\n")
+cat("Corte:", mejor_corte, "\n")
+cat("Precision Global:", mejor_precision_global, "\n")
+cat("Prediccion de la categoria 'Si':", mejor_prediccion_si, "\n")
+cat("========================================\n")
+
+modelo <- train.randomForest(chd ~ ., data = taprendizaje)
+prediccion <- predict(modelo, ttesting, type = "prob")
+Score <- prediccion$prediction[, 2]
+Clase <- ttesting$chd
+mejor_corte <- 0
+mejor_precision_global <- 0
+mejor_prediccion_si <- 0
+
+for (Corte in seq(1, 0, by = -0.05)) {
+  Prediccion <- ifelse(Score >= Corte, "Si", "No")
+  MC <- table(Clase, Pred = factor(Prediccion, levels = c("No", "Si")))
+  indices <- general.indexes(mc = MC)
+  
+  precision_global <- indices$overall.accuracy
+  prediccion_si <- indices$category.accuracy[2]
+  
+  if (prediccion_si > mejor_prediccion_si && precision_global >= mejor_precision_global) {
+    mejor_corte <- Corte
+    mejor_precision_global <- precision_global
+    mejor_prediccion_si <- prediccion_si
+  }
+}
+cat("Mejor Probabilidad de Corte para train.randomForest:\n")
+cat("Corte:", mejor_corte, "\n")
+cat("Precision Global:", mejor_precision_global, "\n")
+cat("Prediccion de la categoria 'Si':", mejor_prediccion_si, "\n")
+cat("========================================\n")
+
+modelo <- train.lda(chd ~ ., data = taprendizaje)
+prediccion <- predict(modelo, ttesting, type = "prob")
+Score <- prediccion$prediction[, 2]
+Clase <- ttesting$chd
+mejor_corte <- 0
+mejor_precision_global <- 0
+mejor_prediccion_si <- 0
+
+for (Corte in seq(1, 0, by = -0.05)) {
+  Prediccion <- ifelse(Score >= Corte, "Si", "No")
+  MC <- table(Clase, Pred = factor(Prediccion, levels = c("No", "Si")))
+  indices <- general.indexes(mc = MC)
+  
+  precision_global <- indices$overall.accuracy
+  prediccion_si <- indices$category.accuracy[2]
+  
+  if (prediccion_si > mejor_prediccion_si && precision_global >= mejor_precision_global) {
+    mejor_corte <- Corte
+    mejor_precision_global <- precision_global
+    mejor_prediccion_si <- prediccion_si
+  }
+}
+cat("Mejor Probabilidad de Corte para train.lda:\n")
+cat("Corte:", mejor_corte, "\n")
+cat("Precision Global:", mejor_precision_global, "\n")
+cat("Prediccion de la categoria 'Si':", mejor_prediccion_si, "\n")
+cat("========================================\n")
+
+modelo <- train.xgboost(
+  chd ~ .,
+  data = taprendizaje,
+  nrounds = 500,
+  print_every_n = 1000,
+  maximize = F ,
+  eval_metric = "error"
+)
+prediccion <- predict(modelo, ttesting, type = "prob")
+Score <- prediccion$prediction[, 2]
+Clase <- ttesting$chd
+mejor_corte <- 0
+mejor_precision_global <- 0
+mejor_prediccion_si <- 0
+
+for (Corte in seq(1, 0, by = -0.05)) {
+  Prediccion <- ifelse(Score >= Corte, "Si", "No")
+  MC <-
+    table(Clase, Pred = factor(Prediccion, levels = c("No", "Si")))
+  indices <- general.indexes(mc = MC)
+  
+  precision_global <- indices$overall.accuracy
+  prediccion_si <- indices$category.accuracy[2]
+  
+  if (prediccion_si > mejor_prediccion_si &&
+      precision_global >= mejor_precision_global) {
+    mejor_corte <- Corte
+    mejor_precision_global <- precision_global
+    mejor_prediccion_si <- prediccion_si
+  }
+}
+cat("Mejor Probabilidad de Corte para train.xgboost:\n")
+cat("Corte:", mejor_corte, "\n")
+cat("Precision Global:", mejor_precision_global, "\n")
+cat("Prediccion de la categoria 'Si':", mejor_prediccion_si, "\n")
+cat("========================================\n")
+
+modelo <- train.bayes(chd ~ ., data = taprendizaje)
+prediccion <- predict(modelo, ttesting, type = "prob")
+Score <- prediccion$prediction[, 2]
+Clase <- ttesting$chd
+mejor_corte <- 0
+mejor_precision_global <- 0
+mejor_prediccion_si <- 0
+
+for (Corte in seq(1, 0, by = -0.05)) {
+  Prediccion <- ifelse(Score >= Corte, "Si", "No")
+  MC <- table(Clase, Pred = factor(Prediccion, levels = c("No", "Si")))
+  indices <- general.indexes(mc = MC)
+  
+  precision_global <- indices$overall.accuracy
+  prediccion_si <- indices$category.accuracy[2]
+  
+  if (prediccion_si > mejor_prediccion_si && precision_global >= mejor_precision_global) {
+    mejor_corte <- Corte
+    mejor_precision_global <- precision_global
+    mejor_prediccion_si <- prediccion_si
+  }
+}
+cat("Mejor Probabilidad de Corte para train.bayes:\n")
+cat("Corte:", mejor_corte, "\n")
+cat("Precision Global:", mejor_precision_global, "\n")
+cat("Prediccion de la categoria 'Si':", mejor_prediccion_si, "\n")
+cat("========================================\n")
+
+modelo <-
+  train.nnet(
+    chd ~ .,
+    data = taprendizaje,
+    size = 4,
+    maxit = 1000,
+    MaxNWts = 400,
+    trace = FALSE
+  )
+prediccion <- predict(modelo, ttesting, type = "prob")
+Score <- prediccion$prediction[, 2]
+Clase <- ttesting$chd
+mejor_corte <- 0
+mejor_precision_global <- 0
+mejor_prediccion_si <- 0
+
+for (Corte in seq(1, 0, by = -0.05)) {
+  Prediccion <- ifelse(Score >= Corte, "Si", "No")
+  MC <- table(Clase, Pred = factor(Prediccion, levels = c("No", "Si")))
+  indices <- general.indexes(mc = MC)
+  
+  precision_global <- indices$overall.accuracy
+  prediccion_si <- indices$category.accuracy[2]
+  
+  if (prediccion_si > mejor_prediccion_si && precision_global >= mejor_precision_global) {
+    mejor_corte <- Corte
+    mejor_precision_global <- precision_global
+    mejor_prediccion_si <- prediccion_si
+  }
+}
+cat("Mejor Probabilidad de Corte para train.nnet:\n")
+cat("Corte:", mejor_corte, "\n")
+cat("Precision Global:", mejor_precision_global, "\n")
+cat("Prediccion de la categoria 'Si':", mejor_prediccion_si, "\n")
+cat("========================================\n")
+
+
+
+
+```
+
+
+#### En la salida anterior se puede comprobar el mejor corte para cada uno de los metodos utilizados
+
+
+```{r 3.2}
+peones <- parallel::detectCores()
+cl <- makeCluster(peones, type = "SOCK")
+
+
+ejecutar.prediccion <- function(datos, formula, muestra, metodo, ...) {
+  ttesting <- datos[muestra, ]
+  taprendizaje <- datos[-muestra, ]
+  modelo <- do.call(metodo, list(formula, data = taprendizaje, ...))
+  prediccion <- predict(modelo, ttesting, type = "class")
+  MC <- confusion.matrix(ttesting, prediccion)
+  return(MC)
+}
+
+
+ejecutar.prediccion.particular <- function(datos, formula, muestra, metodo) {
+  if(metodo == "train.svm"){return(ejecutar.prediccion(datos, formula, muestra, metodo, kernel = "radial", probability = FALSE))}
+  if(metodo == "train.knn"){return(ejecutar.prediccion(datos, formula, muestra, metodo, kmax = 37))}
+  if(metodo == "train.bayes"){return(ejecutar.prediccion(datos, formula, muestra, metodo))}
+  if(metodo == "train.rpart"){return(ejecutar.prediccion(datos, tipo~contraste + energia + homogeneidad, muestra, metodo))}
+  if(metodo == "train.randomForest"){return(ejecutar.prediccion(datos, formula, muestra, metodo, importance = TRUE))}
+  if(metodo == "train.ada"){return(ejecutar.prediccion(datos, formula, muestra, metodo, iter = 20, nu = 1, type = "discrete"))}
+  if(metodo == "train.nnet"){return(ejecutar.prediccion(datos, tipo~contraste + energia + homogeneidad, muestra, metodo, size = 5, rang = 0.1, decay = 5e-04, maxit = 100, trace = FALSE))}
+  if(metodo == "train.xgboost"){return(ejecutar.prediccion(datos, formula, muestra, metodo, nrounds = 79, print_every_n = 10, maximize = F , eval_metric = "error"))}
+  if(metodo == "train.glm"){return(ejecutar.prediccion(datos, formula, muestra, metodo))}
+  if(metodo == "train.neuralnet"){return(ejecutar.prediccion(datos, tipo~contraste + energia + homogeneidad, muestra, metodo, hidden = c(8,6,4), linear.output = FALSE, threshold = 0.5, stepmax = 1e+06))}
+}
+
+
+numero.filas <- nrow(datos)
+cantidad.validacion.cruzada <- 3
+cantidad.grupos <- 10
+metodos <- c("train.svm", "train.knn", "train.bayes", "train.rpart", "train.randomForest", "train.ada", "train.nnet",
+             "train.xgboost", "train.neuralnet", "train.glm")
+
+tam <- floor(sqrt(nrow(datos))) 
+clusterExport(cl, "tam")
+
+list_svm <- list()
+list_knn <- list()
+list_bayes <- list()
+list_arbol <- list()
+list_bosque <- list()
+list_potenciacion <- list()
+list_red <- list()
+list_xgboost  <- list()
+list_red_neu <- list()
+list_glm <- list()
+
+# Exportamos paquetes a los procesadores
+ignore <- clusterEvalQ(cl, {
+  library(dplyr)
+  library(traineR)
+  
+  return(NULL)
+})
+
+# Exportamos los datos y las funciones a los procesadores
+clusterExport(cl, list("datos", "ejecutar.prediccion", "ejecutar.prediccion.particular"))
+
+tiempo.paralelo <- Sys.time()
+
+# Validacion cruzada 3 veces
+for(i in 1:cantidad.validacion.cruzada) {
+  grupos <- createFolds(1:numero.filas, cantidad.grupos)  # Crea los 10 grupos
+  Matriz_svm <- matrix(c(0,0,0,0), nrow=2)
+  Matriz_knn <- matrix(c(0,0,0,0), nrow=2)
+  Matriz_bayes <- matrix(c(0,0,0,0), nrow=2)
+  Matriz_arbol <- matrix(c(0,0,0,0), nrow=2)
+  Matriz_bosque <- matrix(c(0,0,0,0), nrow=2)
+  Matriz_potenciacion <- matrix(c(0,0,0,0), nrow=2)
+  Matriz_red <- matrix(c(0,0,0,0), nrow=2)
+  Matriz_xg  <- matrix(c(0,0,0,0), nrow=2)
+  Matriz_red.neu <- matrix(c(0,0,0,0), nrow=2)
+  Matriz_glm <- matrix(c(0,0,0,0), nrow=2)
+  
+  # Este ciclo es el que hace validacion cruzada con 10 grupos
+  for(k in 1:cantidad.grupos) {
+    muestra <- grupos[[k]]  # Por ser una lista requiere de doble paréntesis
+    # Exportamos la muestra a los procesadores
+    clusterExport(cl, "muestra")
+    
+    resultado <- clusterApply(cl, metodos, function(metodo) {
+     tryCatch({
+        MC <- ejecutar.prediccion.particular(datos = datos, formula = chd ~ ., muestra = muestra, metodo              = metodo)
+      
+        valores <- list(Tipo = metodo, Resultado = MC)
+        return(valores)
+      }, error = function(e) {
+        return(list(Error = as.character(e)))
+      })
+    })
+    
+    for (j in seq_along(metodos)) {
+      if (resultado[[j]][[1]] == "train.svm")
+        Matriz_svm <- Matriz_svm + resultado[[j]][[2]]
+      else if (resultado[[j]][[1]] == "train.knn")
+        Matriz_knn <- Matriz_knn + resultado[[j]][[2]]
+      else if (resultado[[j]][[1]] == "train.bayes")
+        Matriz_bayes <- Matriz_bayes + resultado[[j]][[2]]
+      else if (resultado[[j]][[1]] == "train.rpart")
+        Matriz_arbol <- Matriz_arbol + resultado[[j]][[2]]
+      else if (resultado[[j]][[1]] == "train.randomForest")
+        Matriz_bosque <- Matriz_bosque + resultado[[j]][[2]]
+      else if (resultado[[j]][[1]] == "train.ada")
+        Matriz_potenciacion <-
+          Matriz_potenciacion + resultado[[j]][[2]]
+      else if (resultado[[j]][[1]] == "train.nnet")
+        Matriz_red <- Matriz_red + resultado[[j]][[2]]
+      else if (resultado[[j]][[1]] == "train.xgboost")
+        Matriz_xg <- Matriz_xg + resultado[[j]][[2]]
+      else if (resultado[[j]][[1]] == "train.neuralnet")
+        Matriz_red.neu <- Matriz_red.neu + resultado[[j]][[2]]
+      else if (resultado[[j]][[1]] == "train.glm")
+        Matriz_glm <- Matriz_glm + resultado[[j]][[2]]
+    }
+    
+  }
+  list_svm[[i]] <- Matriz_svm
+  list_red_neu[[i]] <- Matriz_red.neu
+  list_red[[i]] <- Matriz_red
+  list_arbol[[i]] <- Matriz_arbol
+  list_bayes[[i]] <- Matriz_bayes
+  list_potenciacion[[i]] <- Matriz_potenciacion
+  list_xgboost [[i]] <- Matriz_xg
+  list_knn[[i]] <- Matriz_knn
+  list_glm[[i]] <- Matriz_glm
+  list_bosque[[i]] <- Matriz_bosque
+  
+}
+
+stopCluster(cl)
+
+
+resultados <-
+  data.frame(
+    "svm"     = sapply(list_svm, precision("Si")),
+    "knn"     = sapply(list_knn, precision("Si")) ,
+    "bayes" = sapply(list_bayes, precision("Si")),
+    "arbol"     = sapply(list_arbol, precision("Si")),
+    "bosque"     = sapply(list_bosque, precision("Si")),
+    "potenciacion" = sapply(list_potenciacion, precision("Si")),
+    "red.n"     = sapply(list_red, precision("Si")),
+    "xgboost"     = sapply(list_xgboost , precision("Si")) ,
+    "red.neu" = sapply(list_red_neu, precision("Si"))
+  ) 
+
+colores <- c("#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF",
+               "#00FFFF", "#FFA500", "#800080", "#008000")
+
+
+barplot(t(resultados), beside = TRUE, col = colores,
+        main = "Comparacion sis",
+        xlab = "Numero de iteracion",
+        ylab = "Cantidad de Si's",
+        legend.text = colnames(resultados),
+        args.legend = list(bty = 'n'))
+
+
+
+```
+
+
+
+#### Se puede observar que en todas las iteraciones el metodo que sobresale es el de bayes,se puede deducir que este es el mejor metodo para encontrar si´s en la ejecucion
+
+
+
+# Ejercicio 3.3
+
+#### Se podría realizar una busqueda acerca de cual podría ser el corte mas eficiente para la prediccion de sis,sin omitir los datos de no´s presentes,esto para lograr un resultado mucho mas balanceado y de facil analisis o comprension.
+
