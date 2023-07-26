@@ -1,0 +1,256 @@
+---
+title: "parte2"
+author: "Alejandro Barrantes Castro"
+date: "2023-06-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(traineR)
+library(caret)
+library(rpart.plot)
+library(ggplot2)
+library(dplyr)
+library(glue)
+library(tidyverse)
+library(scales)
+library(class)
+library(e1071)
+library(randomForest)
+```
+
+
+
+```{r}
+
+datos <- read.csv("Tumores.csv", header=TRUE, sep=',',dec='.',stringsAsFactors = T)
+enteros <- sapply(datos, is.integer)
+datos[enteros] <- lapply(datos[enteros], as.factor)
+
+datos$tipo <- factor(datos$tipo)
+datos <- subset(datos, select = -1)
+
+set.seed(123) # Fijamos la semilla para reproducibilidad
+indice <- createDataPartition(y = datos$tipo, p = 0.25, list = FALSE)
+ttesting <- datos[indice, ]
+ttraining <- datos[-indice, ]
+str(datos)
+
+```
+
+# EJERCICIO 4
+
+```{r}
+numero.filas <- nrow(datos)
+cantidad.validacion.cruzada <- 5
+cantidad.grupos <- 10
+tam <- floor(sqrt(nrow(datos))) 
+
+#si's
+deteccion.si.discrete <- c()
+deteccion.si.real <- c()
+deteccion.si.gentle <- c()
+
+#errores
+deteccion.error.discrete <- c()
+deteccion.error.real <- c()
+deteccion.error.gentle <- c()
+
+
+
+
+for(i in 1:cantidad.validacion.cruzada){
+  grupos  <- createFolds(1:numero.filas, cantidad.grupos)  # Crea los 10 grupos
+  si.discrete <- 0
+  si.real <- 0
+  si.gentle <- 0
+  
+  error.discrete <- 0
+  error.real <- 0
+  error.gentle <- 0
+  
+  # Este ciclo es el que hace 'cross-validation' (validación cruzada) con 10
+  # grupos (Folds)
+  for(k in 1:cantidad.grupos) {
+    muestra <- grupos[[k]]  # Por ser una lista requiere de doble paréntesis
+    ttesting <- datos[muestra, ]
+    taprendizaje <- datos[-muestra, ]
+    
+    #discrete
+    modelo<-train.ada(tipo~.,data=taprendizaje,iter=80,nu=1,type="discrete")
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    si.discrete <- si.discrete + MC[2,2] # Detección de 1's
+    # Cálculo del ERROR
+    error.discrete<-error.discrete+(1-(sum(diag(MC)))/sum(MC))*100
+    
+    
+     #real
+    modelo<-train.ada(tipo~.,data=taprendizaje,iter=80,nu=1,type="real")
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    si.real <- si.real + MC[2,2] # Detección de 1's
+    # Cálculo del ERROR
+    error.real<-error.real+(1-(sum(diag(MC)))/sum(MC))*100
+    
+     #gentle
+    modelo<-train.ada(tipo~.,data=taprendizaje,iter=80,nu=1,type="gentle")
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    si.gentle <- si.gentle + MC[2,2] # Detección de 1's
+    # Cálculo del ERROR
+    error.gentle<-error.gentle+(1-(sum(diag(MC)))/sum(MC))*100
+    
+  }
+  
+  deteccion.si.discrete[i] <- si.discrete
+  deteccion.si.real[i] <- si.real
+  deteccion.si.gentle[i] <- si.gentle
+  
+  #errores
+  
+  deteccion.error.discrete[i] <- error.discrete/cantidad.grupos
+  deteccion.error.real[i] <- error.real/cantidad.grupos
+  deteccion.error.gentle[i] <- error.gentle/cantidad.grupos
+  
+}
+
+#===============
+resultados <- data.frame("discrete" = deteccion.si.discrete,
+                         "real" = deteccion.si.real,
+                         "gentle" = deteccion.si.gentle)
+
+par(oma=c(0, 0, 0, 8)) # Hace espacio para la leyenda
+
+matplot(resultados, type="b", lty = 1, lwd = 1, pch = 1:ncol(resultados),
+        main = "Detección del Si Tumor", 
+        xlab = "Número de iteración",
+        ylab = "Cantidad de Si tumores detectados",
+        col = rainbow(ncol(resultados)))
+legend(par('usr')[2], par('usr')[4], legend = colnames(resultados),bty='n', xpd=NA,
+       pch=1:ncol(resultados), col = rainbow(ncol(resultados))) # La leyenda
+
+# Errores
+
+resultados <- data.frame("discrete" = deteccion.error.discrete,
+                         "real" = deteccion.error.real,
+                         "gentle" = deteccion.error.gentle)
+
+par(oma=c(0, 0, 0, 8)) # Hace espacio para la leyenda
+matplot(resultados, type="b", lty = 1, lwd = 1, pch = 1:ncol(resultados),
+        main = "Comparación del Error Global", 
+        xlab = "Número de iteración",
+        ylab = "Porcentaje de Error Global",
+        col = rainbow(ncol(resultados)))
+legend(par('usr')[2], par('usr')[4], legend = colnames(resultados),bty='n', xpd=NA, cex = 0.8,
+       pch=1:ncol(resultados), col = rainbow(ncol(resultados))) # La leyenda
+```
+
+# nnet o discrete o bosques
+# 4.2
+
+```{r}
+ # Lista para almacenar las matrices de confusión por iteración
+lista.matrices.discrete <- list() 
+lista.matrices.real <- list()  
+lista.matrices.gentle <- list()
+
+
+
+for (i in 1:cantidad.validacion.cruzada) {
+  grupos <- createFolds(1:numero.filas, cantidad.grupos)
+  # Lista para almacenar las matrices de confusión por cada k
+  matrices.discrete <- list()  
+  matrices.real <- list() 
+  matrices.gentle <- list() 
+  
+  for (k in 1:cantidad.grupos) {
+    muestra <- grupos[[k]]
+    ttesting <- datos[muestra, ]
+    taprendizaje <- datos[-muestra, ]
+    
+    # discrete
+    modelo<-train.ada(tipo~.,data=taprendizaje,iter=80,nu=1,type="discrete")
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    matrices.discrete[[k]] <- MC
+    
+    # real
+    modelo<-train.ada(tipo~.,data=taprendizaje,iter=80,nu=1,type="real")
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    matrices.real[[k]] <- MC
+    
+    #gentle
+    modelo<-train.ada(tipo~.,data=taprendizaje,iter=80,nu=1,type="gentle")
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    matrices.gentle[[k]] <-MC
+    
+  }
+  
+   #inserta el promedio de las matrices del for interno en otra lista
+  lista.matrices.discrete[[i]] <- Reduce(`+`, matrices.discrete) / length(matrices.discrete)
+  lista.matrices.real[[i]] <-  Reduce(`+`, matrices.real) / length(matrices.real)
+  lista.matrices.gentle[[i]] <- Reduce(`+`, matrices.gentle) / length(matrices.gentle)
+  
+}
+
+
+#saca el promedio de la lista de matrices de confusion promedio
+matriz.promedio.discrete <- Reduce(`+`, lista.matrices.discrete) / length(lista.matrices.discrete)
+matriz.promedio.real <- Reduce(`+`, lista.matrices.real) / length(lista.matrices.real)
+matriz.promedio.gentle <-Reduce(`+`, lista.matrices.gentle) / length(lista.matrices.gentle)
+
+
+# Medicion de 1's
+resultados <- data.frame("discrete" = matriz.promedio.discrete[2,2],
+                         "real" = matriz.promedio.real[2,2],
+                         "gentle" = matriz.promedio.gentle[2,2])
+
+
+# Obtener los nombres de las columnas
+nombres_columnas <- colnames(resultados)
+
+# Crear el gráfico de barras
+barplot(as.matrix(resultados), beside = TRUE, legend.text = TRUE,
+        main = "Promedio de Matrices de Confusión", xlab = "Método",
+        ylab = "Promedio", names.arg = nombres_columnas)
+```
+
+
+```{r}
+# Medicion de 0's
+resultados <- data.frame("discrete" = matriz.promedio.discrete[1,1],
+                         "real" = matriz.promedio.real[1,1],
+                         "gentle" = matriz.promedio.gentle[1,1])
+
+
+# Obtener los nombres de las columnas
+nombres_columnas <- colnames(resultados)
+
+# Crear el gráfico de barras
+barplot(as.matrix(resultados), beside = TRUE, legend.text = TRUE,
+        main = "Promedio de Matrices de Confusión", xlab = "Método",
+        ylab = "Promedio", names.arg = nombres_columnas)
+```
+
+```{r}
+# Medicion de error
+
+
+resultados <- data.frame("discrete" = general.indexes(mc=matriz.promedio.discrete)$overall.error,
+                         "real" = general.indexes(mc=matriz.promedio.real)$overall.error,
+                         "arbol" = general.indexes(mc=matriz.promedio.gentle)$overall.error)
+
+
+# Obtener los nombres de las columnas
+nombres_columnas <- colnames(resultados)
+
+# Crear el gráfico de barras
+barplot(as.matrix(resultados), beside = TRUE, legend.text = TRUE,
+        main = "Promedio de Matrices de Confusión", xlab = "Método",
+        ylab = "Promedio", names.arg = nombres_columnas)
+```
+

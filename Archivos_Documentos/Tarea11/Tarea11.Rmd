@@ -1,0 +1,1292 @@
+---
+title: "Tarea11_JoseRojas"
+author: "AndresRojas"
+date: "2023-06-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(kknn)
+library(traineR)
+library(caret)
+library(rpart.plot)
+library(ggplot2)
+library(dplyr)
+library(glue)
+library(tidyverse)
+library(scales)
+library(class)
+library(e1071)
+library(randomForest)
+library(caret)
+```
+
+
+```{r }
+# ========================
+#         Ejercicio 1
+# ========================
+datos <- read.csv("Tumores.csv", header=TRUE, sep=',',dec='.',stringsAsFactors = T)
+
+datos <- subset(datos, select = -imagen)
+enteros <- sapply(datos, is.integer)
+
+set.seed(123)
+
+
+datos
+
+str(datos)
+summary(datos)
+dim(datos)
+
+# createDataPartition(y = datos$tipo, p = 0.25, list = FALSE)
+muestra <- sample(1:nrow(datos), 0.75 * nrow(datos))
+ttesting <- datos[-muestra, ]
+taprendizaje <- datos[muestra, ]
+```
+```{r warning=FALSE}
+# 1.2
+
+v.error.tt <- rep(0, 5)
+
+for (i in 1:5) {
+  muestra <- sample(1:nrow(datos), 0.75 * nrow(datos))
+  ttesting <- datos[-muestra, ]
+  taprendizaje <- datos[muestra, ]
+  
+  modelo <- train.knn(tipo ~ ., data = taprendizaje, kmax = 50)
+  
+  prediccion <- predict(modelo, ttesting, type = "class")
+  
+  MC <- confusion.matrix(ttesting, prediccion)
+  
+  acierto <- sum(diag(MC)) / sum(MC)
+  error <- 1 - acierto
+  v.error.tt[i] <- error
+}
+
+v.error.tt
+plot(v.error.tt, col = "red", type = "b", main = "Variacion del Error", xlab = "Numero de iteracion", ylab = "Error de prediccion")
+
+
+v.error.tc<-rep(0, 5)
+
+for(i in 1:5) {
+  modelo <- train.knn(tipo~.,data=datos,kmax=50)
+  prediccion <- predict(modelo,datos,type = "class")
+  MC <- confusion.matrix(datos, prediccion)  
+  # Porcentaje de buena clasificacion y de error
+  acierto<-sum(diag(MC))/sum(MC)
+  error <- 1- acierto
+  v.error.tc[i] <- error
+}  
+
+plot(v.error.tt,col="red",type="b",ylim=c(min(v.error.tt,v.error.tc),max(v.error.tt,v.error.tc)+0.05),main="Variacion del Error",xlab="Numero de iteracion",ylab="Estimacion del Error")
+points(v.error.tc,col="blue",type="b")
+legend("topright",legend=c("Tabla de Testing","Tabla completa"),col=c("red","blue"),lty=1,lwd=1)
+
+
+```
+```{r warning=FALSE}
+
+# 1.3
+
+
+n <- dim(datos)[1] # Aquí n=150
+n
+v.error.kg<-rep(0,5)
+
+for(i in 1:5) {
+  errori <- 0
+
+  grupos <- createFolds(1:n,10) # grupos$Fold0i es el i-ésimo grupo  
+  # Este ciclo es el que hace "cross-validation" (validación cruzada) con 5 grupos (Folds)
+  for(k in 1:5) {    
+    muestra <- grupos[[k]] # Por ser una lista requiere de doble paréntesis
+    
+    ttesting <- datos[-muestra, ]
+    taprendizaje <- datos[muestra, ]
+    modelo <- train.knn(tipo~.,data=taprendizaje,kmax=50)
+    prediccion <- predict(modelo,ttesting,type = "class")
+    MC <- confusion.matrix(ttesting, prediccion)  
+    # Porcentaje de buena clasificación y de error
+    acierto<-sum(diag(MC))/sum(MC)
+    error <- 1 - acierto
+    errori <- errori + error
+  } 
+  v.error.kg[i] <- errori/5
+}
+plot(v.error.kg, col = "red", type = "b", ylim = c(min(v.error.kg,v.error.tt), max(v.error.kg, 
+                                                                                                               v.error.tt) + 0.05), main = "Variacion del Error", xlab = "Numero de iteracion", 
+     ylab = "Estimacion del Error")
+points(v.error.tt, col = "blue", type = "b")
+legend("topright", legend = c("K-esimo grupo","Tabla Testing(Error Anterior)"), col = c("red",  "blue"), lty = 1, lwd = 1)
+
+plot <- include_graphics("Rplot.PNG")
+plot
+# 1.4
+print("Tal como se puede observar en la figura anterior el metodo de K-esimo grupo se mantiene similar al anterior,sin embargo, en varias de las iteraciones se puede observar que este posee un valor de estimacion del error menor. Esto nos indica que el modelo utilizado tiene un mejor rendimiento en la tarea de predicción en comparacion al anterior")
+
+```
+```{r }
+# ========================
+#         Ejercicio 2
+# ========================
+# 2.1
+
+numero.filas <- nrow(datos)
+cantidad.validacion.cruzada <- 5
+cantidad.grupos <- 10
+
+deteccion.no.discrete <- c()
+deteccion.no.real <- c()
+deteccion.no.gentle <- c()
+
+deteccion.error.discrete <- c()
+deteccion.error.real <- c()
+deteccion.error.gentle <- c()
+
+# datos$tipo<- as.factor(datos$tipo)
+for(i in 1:cantidad.validacion.cruzada){
+  grupos <- createFolds(1:numero.filas,cantidad.grupos) 
+  no.discrete <- 0
+  no.real <- 0
+  no.gentle <- 0
+  
+  error.discrete <- 0
+  error.real <- 0
+  error.gentle <- 0
+  # Este ciclo es el que hace 'cross-validation' (validación cruzada) con 10
+  # grupos (Folds)
+  for(k in 1:cantidad.grupos) {
+    muestra <- grupos[[k]]  # Por ser una lista requiere de doble paréntesis
+    ttesting <- datos[-muestra, ]
+    taprendizaje <- datos[muestra, ]
+    
+    modelo<-train.ada(tipo~.,data=taprendizaje,iter=80,nu=1,type="discrete")
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    no.discrete <- no.discrete + MC[2,2] # Detección de 1's
+    error.discrete<-error.discrete+(1-(sum(diag(MC)))/sum(MC))*100
+
+    
+    modelo<-train.ada(tipo~.,data=taprendizaje,iter=80,nu=1,type="real")
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    no.real <- no.real + MC[2,2] # Detección de 1's
+    error.real<-error.real+(1-(sum(diag(MC)))/sum(MC))*100
+    
+    
+    modelo<-train.ada(tipo~.,data=taprendizaje,iter=80,nu=1,type="gentle")
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    no.gentle <- no.gentle + MC[2,2] # Detección de 1's
+    error.gentle<-error.gentle+(1-(sum(diag(MC)))/sum(MC))*100
+
+
+  }
+  
+  deteccion.no.discrete[i] <- no.discrete
+  deteccion.no.real[i] <- no.real
+  deteccion.no.gentle[i] <- no.gentle
+  
+  deteccion.error.discrete[i] <- error.discrete/cantidad.grupos
+  deteccion.error.real[i] <- error.real/cantidad.grupos
+  deteccion.error.gentle[i] <- error.gentle/cantidad.grupos
+  
+}
+
+resultados <- data.frame("discrete"     = deteccion.no.discrete,
+                         "real"     = deteccion.no.real,
+                         "gentle" = deteccion.no.gentle) # Preparamos los datos
+
+par(oma=c(0, 0, 0, 8)) # Hace espacio para la leyenda
+
+matplot(resultados, type="b", lty = 1, lwd = 1, pch = 1:ncol(resultados),
+        main = "Detección de 1´s con ADA", 
+        xlab = "Numero de iteracion",
+        ylab = "Cantidad de 1´s  detectados",
+        col = rainbow(ncol(resultados)))
+legend(par('usr')[2], par('usr')[4], legend = colnames(resultados),bty='n', xpd=NA,
+       pch=1:ncol(resultados), col = rainbow(ncol(resultados))) # La leyenda
+
+plot <- include_graphics("1sADA.PNG")
+plot
+print("Sí se puede determinar cual algoritmo es mejor,por ejemplo,en este caso se pueded observar que discrete en la mayoría de las iteraciones posee una mayor cantidad de 1´s detectados,incluso sin variar tanto entre una ejecucion y otra como sucede con los otros dos")
+
+  deteccion.error.rectangular <- error.rectangular/cantidad.grupos
+  deteccion.error.triangular <- error.triangular/cantidad.grupos
+  deteccion.error.epanechnikov <- error.epanechnikov/cantidad.grupos
+  deteccion.error.biweight <- error.biweight/cantidad.grupos
+  deteccion.error.triweight <- error.triweight/cantidad.grupos
+  deteccion.error.cos <- error.cos/cantidad.grupos
+  deteccion.error.inv <- error.inv/cantidad.grupos
+  deteccion.error.gaussian <- error.gaussian/cantidad.grupos
+  deteccion.error.optimal <- no.optimal/cantidad.grupos
+#Errores
+resultados <- data.frame("rectangular" = deteccion.error.rectangular,
+                         "triangular" = deteccion.error.triangular,
+                         "epanechnikov" = deteccion.error.epanechnikov,
+                         "biweight" = deteccion.error.biweight,
+                         "triweight" = deteccion.error.triweight,
+                         "cos" = deteccion.error.cos,
+                         "inv" = deteccion.error.inv,
+                         "gaussian" = deteccion.error.gaussian,
+                         "optimal" = deteccion.error.optimal
+                         
+               )
+
+par(oma=c(0, 0, 0, 8)) # Hace espacio para la leyenda
+matplot(resultados, type="b", lty = 1, lwd = 1, pch = 1:ncol(resultados),
+        main = "Comparacion del Error Global", 
+        xlab = "Numero de iteracion",
+        ylab = "Porcentaje de Error Global",
+        col = rainbow(ncol(resultados)))
+legend(par('usr')[2], par('usr')[4], legend = colnames(resultados),bty='n', xpd=NA, cex = 0.8,
+       pch=1:ncol(resultados), col = rainbow(ncol(resultados))) # La leyenda
+
+plot <- include_graphics("errorglobal.PNG")
+plot
+print("tal como se puede oservar el metodo real es el que mantiene un error globar mas bajo,por tal,dependiendo que datos se desean estudiar y en caso de que la precision sea prioridad este metodo podria ser el recomendado,no obstante,como se puede ver la diferencia no es tan grande,por tal se deberá analizar otros factores que puedan influir en la decision")
+
+```
+
+
+```{r warning=FALSE}
+# 2.3
+numero.filas <- nrow(datos)
+cantidad.validacion.cruzada <- 5
+cantidad.grupos <- 10
+
+matrices_discreteList <- list()
+matrices_realList <- list() 
+matrices_gentleList <- list() 
+
+
+for (i in 1:cantidad.validacion.cruzada) {
+  grupos <- createFolds(1:numero.filas, cantidad.grupos) 
+  
+  matrices_discrete <- list() 
+  matrices_real <- list() 
+  matrices_gentle <- list() 
+  
+  for (k in 1:cantidad.grupos) {
+    muestra <- grupos[[k]]
+    taprendizaje <- datos[-muestra, ]
+    ttesting <- datos[muestra, ] 
+
+    
+#discrete
+    modelo<-train.ada(tipo~.,data=ttesting,iter=80,nu=1,type="discrete")
+    prediccion <- predict(modelo, taprendizaje)
+    MC <- confusion.matrix(taprendizaje, prediccion)
+    matrices_discrete[[k]] <- MC
+    
+# real
+    modelo<-train.ada(tipo~.,data=ttesting,iter=80,nu=1,type="real")
+    prediccion <- predict(modelo, taprendizaje)
+    MC <- confusion.matrix(taprendizaje, prediccion)
+    matrices_real[[k]] <- MC
+    
+# gentle
+    modelo<-train.ada(tipo~.,data=ttesting,iter=80,nu=1,type="gentle")
+    prediccion <- predict(modelo, taprendizaje)
+    MC <- confusion.matrix(taprendizaje, prediccion)
+    matrices_gentle[[k]] <-MC
+    
+  }
+  
+  matrices_discreteList[[i]]<- Reduce(`+`, matrices_discrete) / length(matrices_discrete)
+  matrices_realList[[i]] <- Reduce(`+`, matrices_real) / length(matrices_real)
+  matrices_gentleList[[i]]  <-  Reduce(`+`, matrices_gentle) / length(matrices_gentle)
+}
+
+
+promedio_discrete <- Reduce(`+`, matrices_discreteList) / length(matrices_discreteList)
+promedio_real <- Reduce(`+`, matrices_realList) / length(matrices_realList)
+promedio_gentle <- Reduce(`+`, matrices_gentleList) / length(matrices_gentleList)
+
+
+resultados <- data.frame("discrete" = promedio_discrete[2,2],
+                         "real" = promedio_real[2,2],
+                         "gentle" = promedio_gentle[2,2])
+
+# Crear el gráfico de barras
+barplot(as.matrix(resultados), beside = TRUE, legend.text = TRUE,
+        main = "Promedio de Matrices de Confusión", xlab = "Método",
+        ylab = "Promedio", names.arg = colnames(resultados),col = c("blue", "green", "red"))
+
+
+
+# porcentaje1sdiscrete <- promedio_discrete[2, 2] / sum(promedio_discrete[, 2]) * 100
+# porcentaje1sreal <- promedio_real[2, 2] / sum(promedio_real[, 2]) * 100
+# porcentaje1sgentle <- promedio_gentle[2, 2]/ sum(promedio_gentle[,2]) * 100
+#
+# porcentaje0_discrete <- promedio_discrete[1, 1] / sum(promedio_discrete[, 1]) * 100
+# porcentaje0_real <- promedio_real[1, 1] / sum(promedio_real[, 1]) * 100
+# porcentaje0_gentle <- promedio_gentle[1, 1] / sum(promedio_gentle[, 1]) * 100
+#
+# errordiscrete <- (sum(diag(promedio_discrete)) / sum(promedio_discrete)) * 100
+# errorreal <- (sum(diag(promedio_real)) / sum(promedio_real)) * 100
+# errorgentle <- (sum(diag(promedio_gentle)) / sum(promedio_gentle)) * 100
+
+#
+# resultados_promedio <- data.frame(
+#   Metodo = c("discrete", "real", "gentle"),
+#   Porcentaje_1 = c(porcentaje1sdiscrete, porcentaje1sreal, porcentaje1sgentle),
+#   Porcentaje_0 = c(porcentaje0_discrete, porcentaje0_real, porcentaje0_gentle),
+#   Error_Global = c(errordiscrete, errorreal, errorgentle)
+# )
+#
+#
+# resultados_promedio_long <- reshape2::melt(resultados_promedio, id.vars = "Metodo")
+#
+# ggplot(resultados_promedio_long, aes(x = Metodo, y = value, fill = variable)) +
+#   geom_bar(stat = "identity", position = "dodge") +
+#   labs(x = "Método", y = "Porcentaje/Error Global") +
+#   ggtitle("Comparación de los resultados") +
+#   scale_fill_manual(values = c("#FF9999", "#66CCFF", "#99FF99"))  # Customize fill colors if needed
+#
+
+
+
+
+plot <- include_graphics("resultados.PNG")
+plot
+
+print("Como se puede observar los valroes son similares e incluso se podrian considerar identicos,por esta razon no se puede detectar los valores mayores o menores segun el metodo")
+# 2.4
+print("Tal como se puede observar en este caso en especifico la diferencia entre un metodo y otro es minima,por esta razon no se puede recomendar un metodo en especifico")
+```
+```{r}
+{r}
+
+peones <- parallel::detectCores()
+clp <- makeCluster(peones, type = "SOCK")
+
+# Constructor del cluster
+clusterExport(clp, "datos")
+ignore <- clusterEvalQ(clp, {
+  suppressWarnings(suppressMessages(library(caret)))
+  suppressWarnings(suppressMessages(library(traineR)))
+  
+  ejecutar.prediccion <-
+    function(datos, formula, muestra, metodo, ...) {
+      ttesting <- datos[muestra,]
+      taprendizaje <- datos[-muestra,]
+      modelo <- metodo(formula, data = taprendizaje, ...)
+      prediccion <- predict(modelo, ttesting, type = "class")
+      MC <- confusion.matrix(ttesting, prediccion)
+      return(MC)
+    }
+  return(NULL)
+})
+
+numero.filas <- nrow(datos)
+cantidad.grupos <- 10
+cantidad.validacion.cruzada <- 5
+algoritmos <- c("discrete", "real", "gentle")
+
+lista.matrices.discrete <- list()  
+lista.promedio_discrete <- list()  
+
+lista.matrices.real <- list()  
+lista.promedio.real <- list() 
+
+lista.matrices.gentle <- list()  
+lista.promedio.gentle <- list() 
+
+# Para medir el tiempo de ejecución
+tiempo.paralelo <- Sys.time()
+
+for(i in 1:cantidad.validacion.cruzada) {
+  grupos <- createFolds(1:numero.filas, cantidad.grupos)
+  
+  matrices.discrete <- list()  
+  matrices.real <- list() 
+  matrices.gentle <- list()
+  
+  for(k in 1:cantidad.grupos) {
+    muestra <- grupos[[k]]
+            
+    ### Inserta estas 1 variable en cada peón
+    clusterExport(clp, "muestra")
+    
+    resultado <- clusterApply(clp, algoritmos, function(pkernels) {
+      MC <- ejecutar.prediccion(datos, tipo ~ .,muestra, train.ada , type = pkernels, iter=80,nu=1)
+      no.val <- MC
+      valores <- list(Tipo = pkernels, Resultado = no.val)
+      valores
+    })
+    
+    for (j in 1:length(algoritmos)) {
+      if (resultado[[j]][[1]] == "discrete") 
+         matrices.discrete <- matrices.discrete  + resultado[[j]][[2]] 
+      else if (resultado[[j]][[1]] == "real")
+         matrices.real <- matrices.real + resultado[[j]][[2]] 
+      else if (resultado[[j]][[1]] == "gentle")
+         matrices.gentle <- matrices.gentle  + resultado[[j]][[2]] 
+    
+    }
+  }
+      
+    lista.matrices.discrete[[i]] <- Reduce('+', matrices.discrete) / length(matrices.discrete)
+    lista.matrices.real[[i]] <-  Reduce('+', matrices.real) / length(matrices.real)
+    lista.matrices.gentle[[i]] <-  Reduce('+', matrices.gentle) / length(matrices.gentle)
+}
+
+stopCluster(clp) # No olvidar cerrar el proceso
+
+# Despliega el tiempo que tarda en ejecutarse
+tiempo.paralelo <- Sys.time() - tiempo.paralelo
+tiempo.paralelo
+
+matriz.promedio.discrete <- Reduce('+', lista.matrices.discrete) / length(lista.matrices.discrete)
+matriz.promedio.real <- Reduce('+', lista.matrices.real) / length(lista.matrices.real)
+matriz.promedio.gentle <- Reduce('+', lista.matrices.gentle) / length(lista.matrices.gentle)
+
+porcentaje.unos.discrete <- matriz.promedio.discrete["1", "1"] / sum(matriz.promedio.discrete["1", ])
+porcentaje.unos.real <- matriz.promedio.real["1", "1"] / sum(matriz.promedio.real["1", ])
+porcentaje.unos.gentle <- matriz.promedio.gentle["1", "1"] / sum(matriz.promedio.gentle["1", ])
+
+porcentaje.ceros.discrete <- matriz.promedio.discrete["0", "0"] / sum(matriz.promedio.discrete["0", ])
+porcentaje.ceros.real <- matriz.promedio.real["0", "0"] / sum(matriz.promedio.real["0", ])
+porcentaje.ceros.gentle <- matriz.promedio.gentle["0", "0"] / sum(matriz.promedio.gentle["0", ])
+
+error.global.discrete <- (1 - sum(diag(matriz.promedio.discrete)) / sum(matriz.promedio.discrete)) * 100
+error.global.real <- (1 - sum(diag(matriz.promedio.real)) / sum(matriz.promedio.real)) * 100
+error.global.gentle <- (1 - sum(diag(matriz.promedio.gentle)) / sum(matriz.promedio.gentle)) * 100
+
+
+valores <- c(porcentaje.unos.discrete, porcentaje.unos.real, porcentaje.unos.gentle,
+             porcentaje.ceros.discrete, porcentaje.ceros.real, porcentaje.ceros.gentle,
+             error.global.discrete, error.global.real, error.global.gentle)
+
+nombres <- c("1's Discrete", "1's Real", "1's Gentle",
+             "0's Discrete", "0's Real", "0's Gentle",
+             "ErrorDiscrete", "ErrorReal", "ErrorGentle")
+
+barplot(valores, names.arg = nombres, col = rainbow(length(valores)),
+        main = "Comparación de Algoritmos", ylab = "Valor", xlab = "",
+        ylim = c(0, max(valores) * 1.2), las = 2, cex.names = 0.8)
+
+
+```
+
+```{r}
+
+```
+
+
+
+```{r}
+peones <- parallel::detectCores()
+cl <- makeCluster(peones, type = "SOCK")
+clusterExport(cl, "datos")
+# 1.1
+
+
+
+
+# Estos son que si
+deteccion.no.rectangular <- c()
+deteccion.no.triangular <- c()
+deteccion.no.epanechnikov <- c()
+deteccion.no.biweight <- c()
+deteccion.no.triweight <- c()
+deteccion.no.cos <- c()
+deteccion.no.inv <- c()
+deteccion.no.gaussian <- c()
+deteccion.no.optimal <- c()
+
+
+
+ignore <- clusterEvalQ(cl, {
+  library(traineR)
+  ejecutar.prediccion <-
+    function(datos, formula, muestra, metodo, ...) {
+      ttesting <- datos[-muestra, ]
+      taprendizaje <- datos[muestra, ]
+      #modelo <- metodo(formula, data = ttraining, ...)
+      modelo <-
+        do.call(metodo, list(formula, data = taprendizaje, ...))
+      prediccion <- predict(modelo, ttesting, type = "class")
+      MC <- confusion.matrix(ttesting, prediccion)
+      return(MC)
+    }
+  return(NULL)
+})
+
+
+
+
+
+
+# Para medir el tiempo de ejecución
+tiempo.paralelo <- Sys.time()
+
+numero.filas <- nrow(datos)
+cantidad.validacion.cruzada <- 5
+cantidad.grupos <- 10
+algoritmos <- c("rectangular", "triangular", "epanechnikov", "biweight", "triweight",
+                "cos", "inv", "gaussian", "optimal")
+
+for (i in 1:cantidad.validacion.cruzada) {
+  grupos <- createFolds(1:numero.filas, cantidad.grupos)
+  # Estos son que si
+  no.rectangular <- c()
+  no.triangular <- c()
+  no.epanechnikov <- c()
+  no.biweight <- c()
+  no.triweight <- c()
+  no.cos <- c()
+  no.inv <- c()
+  no.gaussian <- c()
+  no.optimal <- c()
+  
+  for (k in 1:cantidad.grupos) {
+    muestra <- grupos[[k]]
+    
+    ### Inserta estas 1 variable en cada peón
+    clusterExport(cl, "muestra")
+    resultado <- clusterApply(cl, algoritmos, function() {
+      MC <-
+        ejecutar.prediccion(
+          datos,
+          tipo ~ .,
+          muestra,
+          train.ada ,
+          kmax = 5,
+          kernel = algoritmos[j]
+        )
+      si.val <- MC[2, 2]
+      print()
+      valores <- list(Tipo = , Resultado = si.val)
+      valores
+    })
+    
+    for (j in 1:length(algoritmos)) {
+    
+      if (algoritmos[j] == "rectangular")
+        no.rectangular <- c(no.rectangular, resultado[[j]][[2]])
+      else if (algoritmos[j] == "triangular")
+        no.triangular <- c(no.triangular, resultado[[j]][[2]])
+      else if (algoritmos[j] == "epanechnikov")
+        no.epanechnikov <- c(no.epanechnikov, resultado[[j]][[2]])
+      else if (algoritmos[j] == "biweight")
+        no.biweight <- c(no.biweight, resultado[[j]][[2]])
+      else if (algoritmos[j] == "triweight")
+        no.triweight <- c(no.triweight, resultado[[j]][[2]])
+      else if (algoritmos[j] == "cos")
+        no.cos <- c(no.cos, resultado[[j]][[2]])
+      else if (algoritmos[j] == "inv")
+        no.inv <- c(no.inv, resultado[[j]][[2]])
+      else if (algoritmos[j] == "gaussian")
+        no.gaussian <- c(no.gaussian, resultado[[j]][[2]])
+      else if (algoritmos[j] == "optimal")
+        no.optimal <- c(no.optimal, resultado[[j]][[2]])
+    }
+  }
+
+  deteccion.no.rectangular <- no.rectangular
+  deteccion.no.triangular <- no.triangular
+  deteccion.no.epanechnikov <- no.epanechniko
+  deteccion.no.biweight <- no.biweight
+  deteccion.no.triweight <- no.triweight
+  deteccion.no.cos <- no.cos
+  deteccion.no.cos <- no.cos
+  deteccion.no.gaussian <- no.gaussian
+  deteccion.no.gaussian <- no.gaussian
+    
+  
+}
+
+
+stopCluster(cl) # No olvidar cerrar el proceso
+tiempo.paralelo <- Sys.time() - tiempo.paralelo
+
+
+
+print("Sí se puede determinar cual algoritmo es mejor,por ejemplo,en este caso se pueded observar que real en la mayoría de las iteraciones posee una mayor cantidad de 1´s detectados,incluso sin variar tanto entre una ejecucion y otra como sucede con los otros dos")
+
+```
+
+
+```{r}
+# ========================
+#         Ejercicio 3
+# ========================
+numero.filas <- nrow(datos)
+
+
+grupos1 <- createFolds(1:numero.filas, 10) 
+algoritmos <- c("rectangular", "triangular", "epanechnikov", "biweight", "triweight",
+                "cos", "inv", "gaussian", "optimal")
+
+calculo1_s <- function(predicciones, observaciones) {
+  sum(predicciones == 1 & observaciones == 1)
+}
+resultados <- matrix(0, nrow = 10, ncol = length(algoritmos))
+colnames(resultados) <- algoritmos
+
+for (i in 1:5) {
+  muestra  <- grupos1[[i]]
+  
+  ttesting <- datos[-muestra, ]
+  taprendizaje <- datos[muestra, ]
+  
+  
+  for (j in 1:length(algoritmos)) {
+    modelo <- train.kknn(tipo ~ ., taprendizaje, kmax = 5, kernel = algoritmos[j])
+    prediccion  <- predict(modelo, ttesting)
+    resultados[i, j] <- calculo1_s(prediccion , ttesting$tipo)
+  }
+}
+
+plot(1:length(algoritmos), resultados[1, ], col = "magenta", type = "b", ylim = c(min(resultados), max(resultados) + 0.05),
+     main = "Variación del Error", xlab = "Algoritmo", ylab = "Estimación del Error", xaxt = "n")
+points(1:length(algoritmos), resultados[2, ], col = "blue", type = "b")
+points(1:length(algoritmos), resultados[3, ], col = "red", type = "b")
+points(1:length(algoritmos), resultados[4, ], col = "green", type = "b")
+points(1:length(algoritmos), resultados[5, ], col = "purple", type = "b")
+legend("topright", legend = c("Iteración 1", "Iteración 2", "Iteración 3", "Iteración 4", "Iteración 5"), 
+       col = c("magenta", "blue", "red", "green", "purple"), lty = 1, lwd = 1)
+
+
+axis(1, at = 1:length(algoritmos), labels = algoritmos, las = 2, cex.axis = 0.8)
+
+plot <- include_graphics("variaciones.PNG")
+plot
+print("En este caso en particular no es posible determinar con claridad cual es el mejor algoritmo,a razon de que estos varian segun la iteracion que se observe. Por ejemplo,el rectangular en la primer iteracion es de los que tienen una menor estimacion,mientras que en la segunda este es de los mas altos")
+
+```
+```{r}
+# 3.2
+
+errorGlobal <- function(predicciones, observaciones) {
+  sum(predicciones != observaciones) / length(observaciones)
+}
+resultados <- matrix(0, nrow = 10, ncol = length(algoritmos))
+colnames(resultados) <- algoritmos
+
+for (i in 1:5) {
+  muestra  <- grupos1[[i]]
+  
+  ttesting <- datos[-muestra, ]
+  taprendizaje <- datos[muestra, ]
+  
+  
+  for (j in 1:length(algoritmos)) {
+    modelo <- train.kknn(tipo ~ ., taprendizaje, kmax = 5, kernel = algoritmos[j])
+    prediccion  <- predict(modelo, ttesting)
+    resultados[i, j] <- errorGlobal(prediccion , ttesting$tipo)
+  }
+}
+
+plot(1:length(algoritmos), resultados[1, ], col = "magenta", type = "b", ylim = c(min(resultados), max(resultados) + 0.05),
+     main = "Variación del Error", xlab = "Algoritmo", ylab = "Error Global",xaxt = "n")
+points(1:length(algoritmos), resultados[2, ], col = "blue", type = "b")
+points(1:length(algoritmos), resultados[3, ], col = "red", type = "b")
+points(1:length(algoritmos), resultados[4, ], col = "green", type = "b")
+points(1:length(algoritmos), resultados[5, ], col = "purple", type = "b")
+legend("topright", legend = c("Iteración 1", "Iteración 2", "Iteración 3", "Iteración 4", "Iteración 5"), 
+       col = c("magenta", "blue", "red", "green", "purple"), lty = 1, lwd = 1)
+
+axis(1, at = 1:length(algoritmos), labels = algoritmos, las = 2, cex.axis = 0.8)
+
+plot <- include_graphics("rectangular.PNG")
+plot
+print("En este caso se puede observar que en la gran parte de iteraciones el modelo algoritmo rectangular posee valores de error global menores en comparacion a los demás,estando en la mayoría como uno de los de menor error. Claramente no se podría afirmar que este sea el mejor pero ciertamente es de los mejores al menos para este caso en concreto")
+
+```
+```{r}
+# 3.3
+
+datos$tipo<- as.factor(datos$tipo)
+
+
+grupos1 <- createFolds(1:numero.filas, 10) 
+algoritmos <- c("rectangular", "triangular", "epanechnikov", "biweight", "triweight",
+                "cos", "inv", "gaussian", "optimal")
+
+resultados <- list()
+for (i in 1:length(algoritmos)) {
+  resultados[[i]] <- matrix(0, nrow = 2, ncol = 2)
+}
+#Sino lo tiro asi falla
+calcular_matriz_confusion <- function(predicciones, observaciones) {
+  MC <- confusionMatrix(predicciones, observaciones)
+  return(MC$table)
+}
+
+for (i in 1:5) {
+  muestra  <- grupos1[[i]]
+  
+  ttesting <- datos[-muestra, ]
+  taprendizaje <- datos[muestra, ]
+  
+  for (j in 1:length(algoritmos)) {
+    modelo <- train.kknn(tipo ~ ., taprendizaje, kmax = 5, kernel = algoritmos[j])
+    prediccion  <- predict(modelo, ttesting)
+    MC <- calcular_matriz_confusion(prediccion , ttesting$tipo)
+    resultados[[j]] <- resultados[[j]] + MC
+  }
+}
+
+porcentaje_1s <- rep(0, length(algoritmos))
+porcentaje_0s <- rep(0, length(algoritmos))
+error_global <- rep(0, length(algoritmos))
+
+for (i in 1:length(algoritmos)) {
+  matriz <- resultados[[i]] / 10
+  TP <- matriz[1, 1]
+  FN <- matriz[2, 1]
+  TN <- matriz[2, 2]
+  FP <- matriz[1, 2]
+  
+  porcentaje_1s[i] <- TP / (TP + FN)
+  porcentaje_0s[i] <- TN / (TN + FP)
+  error_global[i] <- (FP + FN) / (TP + FN + TN + FP)
+}
+
+barplot(porcentaje_1s, names.arg = algoritmos, col = "blue", main = "Porcentaje de 1's ",
+        xlab = "Algoritmo", ylab = "Porcentaje de 1's")
+
+barplot(porcentaje_0s, names.arg = algoritmos, col = "black", main = "Porcentaje de 0's",
+        xlab = "Algoritmo", ylab = "Porcentaje de 0's", ylim = c(0, max(porcentaje_0s) + 0.1))
+
+
+barplot(error_global, names.arg = algoritmos, col = "#FF9999", main = "Error global",
+        xlab = "Algoritmo", ylab = "Error global")
+# grafico1
+plot <- include_graphics("grafico1.PNG")
+plot
+
+print("Tal como se puede observar en el grafico anterior el algoritmo con mayor porcentaje de 1´s promedio es el triweight")
+plot <- include_graphics("grafico2.PNG")
+plot
+print("Con respecto a la medicion de mayor porcentaje de 0´s promedio no se puede llegar a un modelo en especifico a razon de que todos se encuentran al mismo nivel,por lo que no hay variacion entre 1 y otro")
+plot <- include_graphics("errorglobal.PNG")
+plot
+
+print("A diferencia del resultado de 0´s promedio en este caso podemos observar que el algoritmo epanechnikov es relativamente menor a los demas. Por lo que en este caso en especifico es el algoritmo recomendado")
+
+# 3.4
+print("En caso de que el porcentaje de 1´s sera relevante eligiría el metodo triweight,a razón de que en ese caso especifico fue el algoritmo con mayor cantidad de 1´s promedio. No obstante,si los 3 valores calculados son relevantes eligiría el metodo epanechnikov,a razón de que a pesar de que el valor promedio de 1´s no es tan alto como el triweight,se asemeja bastante y posee un menor error global")
+
+```
+```{r}
+# ========================
+#         Ejercicio 4
+# ========================
+# 
+
+
+
+dim(datos)
+summary(datos)
+
+numero.filas <- nrow(datos)
+cantidad.validacion.cruzada <- 5
+cantidad.grupos <- 10
+
+deteccion.no.svm <- c()
+deteccion.no.knn <- c()
+deteccion.no.arbol <- c()
+deteccion.no.bosque <- c()
+deteccion.no.potenciacion <- c()
+deteccion.no.xgboost <- c()
+deteccion.no.red.neu <- c()
+
+
+# Validación cruzada 5 veces
+for (i in 1:cantidad.validacion.cruzada) {
+  grupos1 <- createFolds(1:numero.filas, cantidad.grupos) # Crea los 10 grupos
+  no.svm <- 0
+  no.knn <- 0
+  no.arbol <- 0
+  no.bosque <- 0
+  no.potenciacion <- 0
+  no.xg  <- 0
+  no.red.neu <- 0
+
+  
+  # Este ciclo es el que hace validación cruzada con 10 grupos
+  for (k in 1:cantidad.grupos) {
+    
+    muestra <- grupos1[[k]]
+    ttesting <- datos[-muestra, ]
+    ttraining <- datos[muestra, ]
+    
+    modelo <- train.svm(tipo ~ ., data = ttraining, kernel = "linear", probability = FALSE)
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    no.svm <- no.svm + MC[2, 2] # Detección de los No Pagadores
+    
+    modelo <- train.knn(tipo ~ ., data = ttraining, kmax = 37)
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    no.knn <- no.knn + MC[2, 2] # Detección de los No Pagadores
+    
+    modelo = train.rpart(tipo ~ ., data = ttraining)
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    no.arbol <- no.arbol + MC[2, 2] # Detección de los No Pagadores
+    
+    modelo <- train.randomForest(tipo ~ ., data = ttraining)
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    no.bosque <- no.bosque + MC[2, 2] # Detección de los No Pagadores
+    
+    modelo <- train.ada(tipo ~ ., data = ttraining, iter = 20, nu = 1, type = "discrete")
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    no.potenciacion <- no.potenciacion + MC[2, 2] # Detección de los No Pagadores
+    
+    modelo <- train.xgboost(tipo ~ ., data = ttraining, nrounds = 79,
+                            print_every_n = 10, maximize = F , eval_metric = "error")
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    no.xg <- no.xg +MC[2, 2]# Detección de los No Pagadores
+    
+    modelo <- train.neuralnet(tipo ~., data = ttraining, hidden = c(8,6,4), 
+                              linear.output = FALSE, threshold = 0.5, stepmax = 1e+06)
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    no.red.neu <- no.red.neu + MC[2, 2] # Detección de los No Pagadores
+  }
+
+  deteccion.no.svm[i] <- no.svm
+  deteccion.no.knn[i] <- no.knn
+  deteccion.no.arbol[i] <- no.arbol
+  deteccion.no.bosque[i] <- no.bosque
+  deteccion.no.potenciacion[i] <- no.potenciacion
+  deteccion.no.xgboost[i] <- no.xg
+  deteccion.no.red.neu[i] <- no.red.neu
+
+
+}
+
+resultados <- data.frame("svm" = deteccion.no.svm,
+                         "k_vecinos" = deteccion.no.knn,
+                         "arboles" = deteccion.no.arbol,
+                         "bosques" = deteccion.no.bosque,
+                         "potenciacion" = deteccion.no.potenciacion,
+                         "xgboost" = deteccion.no.xgboost,
+                         "redes_neuralnet" = no.red.neu)
+
+par(oma=c(0, 0, 0, 8)) # Hace espacio para la leyenda
+
+matplot(resultados, type="b", lty = 1, lwd = 1, pch = 1:ncol(resultados),
+        main = "Detección de tumor", 
+        xlab = "Numero de iteracion",
+        ylab = "Cantidad de personas con tumor",
+        col = rainbow(ncol(resultados)))
+legend(par('usr')[2], par('usr')[4], legend = colnames(resultados),bty='n', xpd=NA,
+       pch=1:ncol(resultados), col = rainbow(ncol(resultados))) # La leyenda
+
+
+print("No es posible determinar el mejor algoritmo,sin embargo,se puede observar que a traves de las iteraciones el mas estable es el redes neural net,sin embargo,está alejado de los demás,por lo que quizá los valores estén siendo superiores a los reales")
+```
+```{r}
+dim(datos)
+summary(datos)
+
+numero.filas <- nrow(datos)
+cantidad.validacion.cruzada <- 5
+cantidad.grupos <- 10
+
+confusion_matrices_svm <- list()
+confusion_matrices_knn <- list()
+confusion_matrices_arbol <- list()
+confusion_matrices_bosque <- list()
+confusion_matrices_potenciacion <- list()
+confusion_matrices_xgboost <- list()
+confusion_matrices_red_neu <- list()
+
+# Validación cruzada 5 veces
+for (i in 1:cantidad.validacion.cruzada) {
+  grupos1 <- createFolds(1:numero.filas, cantidad.grupos) # Crea los 10 grupos
+  no.svm <- 0
+  no.knn <- 0
+  no.arbol <- 0
+  no.bosque <- 0
+  no.potenciacion <- 0
+  no.xg <- 0
+  no.red.neu <- 0
+  
+  # Este ciclo es el que hace validación cruzada con 10 grupos
+  for (k in 1:cantidad.grupos) {
+    muestra <- grupos1[[k]]
+    ttesting <- datos[-muestra, ]
+    ttraining <- datos[muestra, ]
+    
+    modelo <- train.svm(tipo ~ ., data = ttraining, kernel = "linear", probability = FALSE)
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    no.svm <- no.svm + MC[2, 2] # Detección de los No Pagadores
+    confusion_matrices_svm[[i]] <- MC
+    
+    modelo <- train.knn(tipo ~ ., data = ttraining, kmax = 37)
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    no.knn <- no.knn + MC[2, 2] # Detección de los No Pagadores
+    confusion_matrices_knn[[i]] <- MC
+    
+    modelo <- train.rpart(tipo ~ ., data = ttraining)
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    no.arbol <- no.arbol + MC[2, 2] # Detección de los No Pagadores
+    confusion_matrices_arbol[[i]] <- MC
+    
+    modelo <- train.randomForest(tipo ~ ., data = ttraining)
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    no.bosque <- no.bosque + MC[2, 2] # Detección de los No Pagadores
+    confusion_matrices_bosque[[i]] <- MC
+    
+    modelo <- train.ada(tipo ~ ., data = ttraining, iter = 20, nu = 1, type = "discrete")
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    no.potenciacion <- no.potenciacion + MC[2, 2] # Detección de los No Pagadores
+    confusion_matrices_potenciacion[[i]] <- MC
+    
+    modelo <- train.xgboost(tipo ~ ., data = ttraining, nrounds = 79,
+                            print_every_n = 10, maximize = FALSE, eval_metric = "error")
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    no.xg <- no.xg + MC[2, 2] # Detección de los No Pagadores
+    confusion_matrices_xgboost[[i]] <- MC
+    
+    modelo <- train.neuralnet(tipo ~ ., data = ttraining, hidden = c(8, 6, 4),
+                              linear.output = FALSE, threshold = 0.5, stepmax = 1e+06)
+    prediccion <- predict(modelo, ttesting)
+    MC <- confusion.matrix(ttesting, prediccion)
+    no.red.neu <- no.red.neu + MC[2, 2] # Detección de los No Pagadores
+    confusion_matrices_red_neu[[i]] <- MC
+  }
+  
+  deteccion.no.svm[i] <- no.svm
+  deteccion.no.knn[i] <- no.knn
+  deteccion.no.arbol[i] <- no.arbol
+  deteccion.no.bosque[i] <- no.bosque
+  deteccion.no.potenciacion[i] <- no.potenciacion
+  deteccion.no.xgboost[i] <- no.xg
+  deteccion.no.red.neu[i] <- no.red.neu
+}
+
+avg_confusion_svm <- Reduce("+", confusion_matrices_svm) / cantidad.validacion.cruzada
+avg_confusion_knn <- Reduce("+", confusion_matrices_knn) / cantidad.validacion.cruzada
+avg_confusion_arbol <- Reduce("+", confusion_matrices_arbol) / cantidad.validacion.cruzada
+avg_confusion_bosque <- Reduce("+", confusion_matrices_bosque) / cantidad.validacion.cruzada
+avg_confusion_potenciacion <- Reduce("+", confusion_matrices_potenciacion) / cantidad.validacion.cruzada
+avg_confusion_xgboost <- Reduce("+", confusion_matrices_xgboost) / cantidad.validacion.cruzada
+avg_confusion_red_neu <- Reduce("+", confusion_matrices_red_neu) / cantidad.validacion.cruzada
+
+# Porcentaje de detección de 1's y 0's y error global promedio
+porcentaje_1 <- c(avg_confusion_svm[2, 2], avg_confusion_knn[2, 2], avg_confusion_arbol[2, 2],
+                  avg_confusion_bosque[2, 2], avg_confusion_potenciacion[2, 2], avg_confusion_xgboost[2, 2],
+                  avg_confusion_red_neu[2, 2])
+porcentaje_0 <- c(avg_confusion_svm[1, 1], avg_confusion_knn[1, 1], avg_confusion_arbol[1, 1],
+                  avg_confusion_bosque[1, 1], avg_confusion_potenciacion[1, 1], avg_confusion_xgboost[1, 1],
+                  avg_confusion_red_neu[1, 1])
+error_global <- c(1 - sum(diag(avg_confusion_svm)) / sum(avg_confusion_svm),
+                  1 - sum(diag(avg_confusion_knn)) / sum(avg_confusion_knn),
+                  1 - sum(diag(avg_confusion_arbol)) / sum(avg_confusion_arbol),
+                  1 - sum(diag(avg_confusion_bosque)) / sum(avg_confusion_bosque),
+                  1 - sum(diag(avg_confusion_potenciacion)) / sum(avg_confusion_potenciacion),
+                  1 - sum(diag(avg_confusion_xgboost)) / sum(avg_confusion_xgboost),
+                   1 - sum(diag(avg_confusion_red_neu)) / sum(avg_confusion_red_neu))
+
+# Gráfico de barras para porcentaje de detección de 1's
+barplot(porcentaje_1, main = "Porcentaje de Detección de 1's",
+        xlab = "Método", ylab = "Porcentaje",
+        names.arg = c("SVM", "KNN", "Árboles", "Bosques", "Potenciación", "XGBoost", "Redes Neuronales"),
+        ylim = c(0, max(porcentaje_1) * 1.2))
+
+# Gráfico de barras para porcentaje de detección de 0's
+barplot(porcentaje_0, main = "Porcentaje de Detección de 0's", 
+        xlab = "Método", ylab = "Porcentaje",
+        names.arg = c("SVM", "KNN", "Árboles", "Bosques", "Potenciación", "XGBoost", "Redes Neuronales"),
+        col = rainbow(length(porcentaje_0)))
+
+# Gráfico de barras para error global promedio
+barplot(error_global, main = "Error Global Promedio", 
+        xlab = "Método", ylab = "Error Global",
+        names.arg = c("SVM", "KNN", "Árboles", "Bosques", "Potenciación", "XGBoost", "Redes Neuronales"),
+        col = rainbow(length(error_global)))
+
+
+print("Tal como se puede observar en los graficos el metodo que posee un mayor porcentaje de deteccion de 0´s es el de arboles,con respecto a la deteccion de 1´s no se puede distingir con claridad si uno está detectando mas porcentaje que otro,a razon de que sus valores son sumamente similares. En lo que respecta al error globar promedio el mejor metodo sería el de XGBoost,a razon de que es el que presenta valores mas bajos")
+
+
+# 4.3
+
+print("De manera personal utilizaria XGBoost,a razon de su bajo error global promedio,ademas de que los valores no varían tanto en comparacion al de arboles que es el que posee un mayor porcentaje de deteccion de 0´s")
+```
+
+
+
+
+
+
+
+```{r 1.3}
+# 1.3
+peones <- parallel::detectCores()
+cl <- makeCluster(peones, type = "SOCK")
+clusterExport(cl, "datos")
+
+
+ignore <- clusterEvalQ(cl, {
+  library(traineR)
+  ejecutar.prediccion <-
+    function(datos, formula, muestra, metodo, ...) {
+      ttesting <- datos[-muestra, ]
+      taprendizaje <- datos[muestra, ]
+      #modelo <- metodo(formula, data = ttraining, ...)
+      modelo <-
+        do.call(metodo, list(formula, data = taprendizaje, ...))
+      prediccion <- predict(modelo, ttesting, type = "class")
+      MC <- confusion.matrix(ttesting, prediccion)
+      return(MC)
+    }
+  return(NULL)
+})
+
+
+
+numero.filas <- nrow(datos)
+cantidad.validacion.cruzada <- 5
+cantidad.grupos <- 10
+algoritmos <- c("rectangular", "triangular", "epanechnikov", "biweight", "triweight",
+                "cos", "inv", "gaussian", "optimal")
+
+
+matrices_List_rectangular <- c()
+matrices_List_triangular <- c()
+matrices_List_epanechnikov <- c()
+matrices_List_biweight <- c()
+matrices_List_triweight <- c()
+matrices_List_cos <- c()
+matrices_List_inv <- c()
+matrices_List_gaussian <- c()
+matrices_List_optimal <- c()
+
+
+
+# Para medir el tiempo de ejecución
+tiempoinicial <- Sys.time()
+
+for (i in 1:cantidad.validacion.cruzada) {
+  grupos <- createFolds(1:numero.filas, cantidad.grupos) 
+  
+matrices_rectangular <- 0
+matrices_triangular <- 0
+matrices_epanechnikov <- 0
+matrices_biweight <- 0
+matrices_triweight <- 0
+matrices_cos <- 0
+matrices_inv <- 0
+matrices_gaussian <- 0
+matrices_optimal <- 0
+  
+  for (k in 1:cantidad.grupos) {
+    muestra <- grupos[[k]]
+    clusterExport(cl, "muestra")
+    
+    resultado <- clusterApply(cl, algoritmos, function(metodos) {
+      MC <-
+        ejecutar.prediccion(
+          datos,
+          tipo ~ .,
+          muestra,
+          train.knn ,
+          kmax = 5,
+          kernel = metodos
+        )
+      no.val <- MC
+      valores <- list(Tipo = metodos, Resultado = no.val)
+      valores
+    })
+    
+    for (j in 1:length(algoritmos)) {
+      if (algoritmos[j] == "rectangular")
+        matrices_rectangular <-  matrices_rectangular+ resultado[[j]][[2]]
+      else if (algoritmos[j] == "triangular")
+        matrices_triangular <- matrices_triangular+ resultado[[j]][[2]]
+      else if (algoritmos[j] == "epanechnikov")
+        matrices_epanechnikov <-  matrices_epanechnikov+ resultado[[j]][[2]]
+      else if (algoritmos[j] == "biweight")
+        matrices_biweight <-  matrices_biweight+ resultado[[j]][[2]]
+      else if (algoritmos[j] == "triweight")
+        matrices_triweight <-  matrices_triweight+ resultado[[j]][[2]]
+      else if (algoritmos[j] == "cos")
+        matrices_cos <-  matrices_cos+ resultado[[j]][[2]]
+      else if (algoritmos[j] == "inv")
+        matrices_inv <-  matrices_inv+ resultado[[j]][[2]]
+      else if (algoritmos[j] == "gaussian")
+        matrices_gaussian <-  matrices_gaussian+ resultado[[j]][[2]]
+      else if (algoritmos[j] == "optimal")
+        matrices_optimal <-  matrices_optimal+ resultado[[j]][[2]]
+    }
+    
+  }
+
+  matrices_List_rectangular[[i]]<- matrices_rectangular
+  matrices_List_triangular[[i]] <- matrices_triangular
+  matrices_List_epanechnikov[[i]]  <-  matrices_epanechnikov
+  matrices_List_biweight[[i]]  <-  matrices_biweight
+  matrices_List_triweight[[i]]  <-  matrices_triweight
+  matrices_List_cos[[i]]  <-  matrices_cos
+  matrices_List_inv[[i]]  <-  matrices_inv
+  matrices_List_gaussian[[i]]  <-  matrices_gaussian
+  matrices_List_optimal[[i]]  <-  matrices_optimal
+  
+}
+stopCluster(cl) # No olvidar cerrar el proceso
+# Despliega el tiempo que tarda en ejecutarse
+
+tiempo.paralelo <- Sys.time() - tiempoinicial
+# tiempo.paralelo
+
+
+promedio_rectangular <- Reduce(`+`, matrices_List_rectangular) / length(matrices_List_rectangular)
+promedio_triangular <- Reduce(`+`, matrices_List_triangular) / length(matrices_List_triangular)
+promedio_epanechnikov <- Reduce(`+`, matrices_List_epanechnikov) / length(matrices_List_epanechnikov)
+promedio_biweight <- Reduce(`+`, matrices_List_biweight) / length(matrices_List_biweight)
+promedio_triweight <- Reduce(`+`, matrices_List_triweight) / length(matrices_List_triweight)
+promedio_cos <- Reduce(`+`, matrices_List_cos) / length(matrices_List_cos)
+promedio_inv <- Reduce(`+`, matrices_List_inv) / length(matrices_List_inv)
+promedio_gaussian <- Reduce(`+`, matrices_List_gaussian) / length(matrices_List_gaussian)
+promedio_optimal <- Reduce(`+`, matrices_List_optimal) / length(matrices_List_optimal)
+
+
+
+porcentaje1s_rectangular <- promedio_rectangular[2, 2]  / sum(promedio_rectangular[2,]) * 100
+
+porcentaje1s_triangular <- promedio_triangular[2, 2]  / sum(promedio_triangular[2,]) * 100
+
+porcentaje1s_epanechnikov <- promedio_epanechnikov[2, 2]  / sum(promedio_epanechnikov[2, ]) * 100
+
+porcentaje1s_biweight <- promedio_biweight [2, 2] / sum(promedio_biweight[2, ]) * 100
+porcentaje1s_triweight <- promedio_triweight [2, 2] / sum(promedio_triweight[2, ]) * 100
+porcentaje1s_cos <- promedio_cos [2, 2] / sum(promedio_cos[2,]) * 100
+porcentaje1s_inv <- promedio_inv [2, 2] / sum(promedio_inv[2,]) * 100
+porcentaje1s_gaussian <- promedio_gaussian [2, 2] / sum(promedio_gaussian[2,]) * 100
+porcentaje1s_optimal <- promedio_optimal [2, 2] / sum(promedio_optimal[2,]) * 100
+
+porcentaje0s_rectangular <- promedio_rectangular[1, 1] / sum(promedio_rectangular[1, ]) * 100
+porcentaje0s_triangular <- promedio_triangular[1, 1] / sum(promedio_triangular[1, ]) * 100
+porcentaje0s_epanechnikov <- promedio_epanechnikov[1, 1] / sum(promedio_epanechnikov[1, ]) * 100
+porcentaje0s_biweight <- promedio_biweight[1, 1] / sum(promedio_biweight[1, ]) * 100
+porcentaje0s_triweight <- promedio_triweight[1, 1] / sum(promedio_triweight[1, ]) * 100
+porcentaje0s_cos <- promedio_cos[1, 1] / sum(promedio_cos[1, ]) * 100
+porcentaje0s_inv <- promedio_inv[1, 1] / sum(promedio_inv[1, ]) * 100
+porcentaje0s_gaussian <- promedio_gaussian[1, 1] / sum(promedio_gaussian[1, ]) * 100
+porcentaje0s_optimal <- promedio_optimal[1, 1] / sum(promedio_optimal[1, ]) * 100
+
+error_rectangular <- (sum(diag(promedio_rectangular )) / sum(promedio_rectangular)) * 100
+
+error_triangular <- (sum(diag(promedio_triangular)) / sum(promedio_triangular)) * 100
+
+error_gaussian <- (sum(diag(promedio_gaussian  )) / sum(promedio_gaussian )) * 100
+                   
+error_epanechnikov <- (sum(diag(promedio_epanechnikov)) / sum(promedio_epanechnikov)) * 100
+
+error_biweight <- (sum(diag(promedio_biweight)) / sum(promedio_biweight)) * 100
+
+error_triweight <- (sum(diag(promedio_triweight)) / sum(promedio_triweight)) * 100
+
+error_cos <- (sum(diag(promedio_cos)) / sum(promedio_cos)) * 100
+
+error_inv <- (sum(diag(promedio_inv)) / sum(promedio_inv)) * 100
+
+error_gaussian <- (sum(diag(promedio_gaussian)) / sum(promedio_gaussian)) * 100
+
+error_optimal <- (sum(diag(promedio_optimal)) / sum(promedio_optimal)) * 100
+
+
+
+
+#
+resultados_promedio <- data.frame(
+  Metodo =  c(
+    "rectangular",
+    "triangular",
+    "epanechnikov",
+    "biweight",
+    "triweight",
+    "cos",
+    "inv",
+    "gaussian",
+    "optimal"
+  ),
+  Porcentaje_1 = c(
+    porcentaje1s_rectangular,
+    porcentaje1s_triangular,
+    porcentaje1s_epanechnikov,
+    porcentaje1s_biweight,
+    porcentaje1s_triweight,
+    porcentaje1s_cos,
+    porcentaje1s_inv,
+    porcentaje1s_gaussian,
+    porcentaje1s_optimal
+  ),
+  Porcentaje_0 = c(
+    porcentaje0s_rectangular,
+    porcentaje0s_triangular,
+    porcentaje0s_epanechnikov,
+    porcentaje0s_biweight,
+    porcentaje0s_triweight,
+    porcentaje0s_cos,
+    porcentaje0s_inv,
+    porcentaje0s_gaussian,
+    porcentaje0s_optimal
+  ),
+  Error_Global = c(
+    error_rectangular,
+    error_triangular,
+    error_epanechnikov,
+    error_biweight,
+    error_triweight,
+    error_cos,
+    error_inv,
+    error_gaussian,
+    error_optimal
+  )
+  
+)
+
+
+resultados_promedio_long <- reshape2::melt(resultados_promedio, id.vars = "Metodo")
+
+ggplot(resultados_promedio_long, aes(x = Metodo, y = value, fill = variable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Método", y = "Valores") +
+  ggtitle("Comparación de los resultados") +
+  scale_fill_manual(values = c("#FF9999", "#66CCFF", "#99FF99")) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  geom_text(aes(label = round(value,1)), position = position_dodge(width = 0.9), vjust = -0.5)
+
+
+
+# 1.4
+print("Tal como se puede observar en este caso en especifico la diferencia entre un metodo y otro es minima,por esta razon no se puede recomendar un metodo en especifico. En donde se puede observar un mayor cambio es principalmente en los valores de 0s presentes,donde por ejemplo,epanechnikov, posee un valor relativamente menor junto a rectangular en comparacion a los demas que se encuentran alrededor de 30s o superiores a este valor")
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
